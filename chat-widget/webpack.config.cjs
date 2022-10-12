@@ -7,7 +7,7 @@ module.exports = {
     entry: "./samples/javascript-sample/SampleWidget.js",
     mode: "production",
     output: {
-        filename: "out.js"
+        filename: "[name].js"
     },
     resolve: {
         extensions: [".Webpack.js", ".web.js", ".ts", ".js", ".jsx", ".tsx"]
