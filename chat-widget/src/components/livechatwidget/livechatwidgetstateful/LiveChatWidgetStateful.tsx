@@ -17,7 +17,8 @@ import {
     shouldShowPreChatSurveyPane,
     shouldShowProactiveChatPane,
     shouldShowReconnectChatPane,
-    shouldShowWebChatContainer
+    shouldShowWebChatContainer,
+    shouldShowWidgetUnloadPane
 } from "../../../controller/componentController";
 
 import CallingContainerStateful from "../../callingcontainerstateful/CallingContainerStateful";
@@ -65,6 +66,8 @@ import { defaultClientDataStoreProvider } from "../../../common/storage/default/
 import { IScrollBarProps } from "../interfaces/IScrollBarProps";
 import { defaultScrollBarProps } from "../common/defaultProps/defaultScrollBarProps";
 import { E2VVOptions } from "../../../common/Constants";
+import RaveLoadingPaneStateful from "../../raveloadingpane/RaveLoadingPaneStateful";
+import WidgetUnloadPane from "../../WidgetUnloadPane/WidgetUnloadPane";
 
 export const LiveChatWidgetStateful = (props: ILiveChatWidgetProps) => {
     const [state, dispatch]: [ILiveChatWidgetContext, Dispatch<ILiveChatWidgetAction>] = useChatContextStore();
@@ -82,7 +85,7 @@ export const LiveChatWidgetStateful = (props: ILiveChatWidgetProps) => {
     const generalStyles: IStackStyles = {
         root: Object.assign({}, getGeneralStylesForButton(state), props.styleProps?.generalStyles)
     };
-
+    console.log(props.widgetUnloadPaneProps);
     //Scrollbar styles
     const scrollbarProps: IScrollBarProps = Object.assign({}, defaultScrollBarProps, props?.scrollBarProps);
 
@@ -492,6 +495,8 @@ export const LiveChatWidgetStateful = (props: ILiveChatWidgetProps) => {
                     {!props.controlProps?.hideConfirmationPane && shouldShowConfirmationPane(state) && (decodeComponentString(props.componentOverrides?.confirmationPane) || <ConfirmationPaneStateful {...confirmationPaneProps} setPostChatContext={setPostChatContextRelay} prepareEndChat={prepareEndChatRelay} />)}
 
                     {!props.controlProps?.hidePostChatLoadingPane && shouldShowPostChatLoadingPane(state) && (decodeComponentString(props.componentOverrides?.postChatLoadingPane) || <PostChatLoadingPaneStateful {...props.postChatLoadingPaneProps} />)}
+
+                    {!props.controlProps?.hideWidgetUnloadPane && shouldShowWidgetUnloadPane(state) && (<WidgetUnloadPane {...props.widgetUnloadPaneProps} />)}
 
                     {shouldShowPostChatSurveyPane(state) && (decodeComponentString(props.componentOverrides?.postChatSurveyPane) || <PostChatSurveyPaneStateful {...props.postChatSurveyPaneProps} {...props.chatSDK} />)}
 

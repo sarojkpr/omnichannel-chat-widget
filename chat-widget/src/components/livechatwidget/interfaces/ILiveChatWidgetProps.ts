@@ -22,6 +22,7 @@ import { ILiveChatWidgetContext } from "../../../contexts/common/ILiveChatWidget
 import { IContextDataStore } from "../../../common/interfaces/IContextDataStore";
 import { IPostChatSurveyPaneStatefulProps } from "../../postchatsurveypanestateful/interfaces/IPostChatSurveyPaneStatefulProps";
 import { IScrollBarProps } from "./IScrollBarProps";
+import { IWidgetUnloadPaneProps } from "../../WidgetUnloadPane/interfaces/IWidgetUnloadPaneProps";
 
 export interface ILiveChatWidgetProps {
     audioNotificationProps?: IAudioNotificationProps;
@@ -51,6 +52,7 @@ export interface ILiveChatWidgetProps {
     preChatSurveyPaneProps?: IPreChatSurveyPaneProps;
     proactiveChatPaneProps?: IProactiveChatPaneStatefulProps;
     reconnectChatPaneProps?: IReconnectChatPaneStatefulProps;
+    widgetUnloadPaneProps?: IWidgetUnloadPaneProps;
     styleProps?: ILiveChatWidgetStyleProps;
     telemetryConfig: ITelemetryConfig;
     webChatContainerProps?: IWebChatContainerStatefulProps;
