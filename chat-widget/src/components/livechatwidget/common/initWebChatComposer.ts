@@ -37,6 +37,7 @@ import sanitizationMiddleware from "../../webchatcontainerstateful/webchatcontro
 import { createCardActionMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/cardActionMiddleware";
 import createMessageTimeStampMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/messageTimestampMiddleware";
 import { Constants } from "../../../common/Constants";
+import chatgptMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/chatgptMiddleware";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const initWebChatComposer = (props: ILiveChatWidgetProps, chatSDK: any, state: ILiveChatWidgetContext, dispatch: Dispatch<ILiveChatWidgetAction>, setWebChatStyles: any) => {
@@ -99,6 +100,7 @@ export const initWebChatComposer = (props: ILiveChatWidgetProps, chatSDK: any, s
             gifUploadMiddleware,
             htmlPlayerMiddleware,
             htmlTextMiddleware,
+            chatgptMiddleware,
             createMaxMessageSizeValidator(localizedTexts),
             sanitizationMiddleware,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any

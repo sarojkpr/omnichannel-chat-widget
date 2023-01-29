@@ -18,7 +18,6 @@ import { TelemetryHelper } from "../../../../../common/telemetry/TelemetryHelper
 import { defaultSystemMessageStyles } from "./defaultStyles/defaultSystemMessageStyles";
 import { defaultUserMessageStyles } from "./defaultStyles/defaultUserMessageStyles";
 import { escapeHtml } from "../../../../../common/utils";
-import { IconButton, IIconProps } from "@fluentui/react";
 
 const loggedSystemMessages = new Array<string>();
 
@@ -73,6 +72,9 @@ const isDataTagsPresent = (card: any) => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const createActivityMiddleware = (systemMessageStyleProps?: React.CSSProperties, userMessageStyleProps?: React.CSSProperties) => () => (next: any) => (...args: any) => {
     const [card] = args;
+
+
+
     if (card.activity) {
         if (card.activity.from?.role === DirectLineSenderRole.Channel) {
             if (card.activity.channelData?.type === MessageTypes.Thread) {
@@ -101,29 +103,13 @@ export const createActivityMiddleware = (systemMessageStyleProps?: React.CSSProp
             const userMessageStyles = { ...defaultUserMessageStyles, ...userMessageStyleProps };
             // eslint-disable-next-line react/display-name, @typescript-eslint/no-explicit-any
             return (...renderArgs: any) => (
-                <div>
-                    {card.activity.from.role === DirectLineSenderRole.User ? (
-                        <div
-                            className={Constants.sentMessageClassName}
-                            style={userMessageStyles} aria-hidden="true">
-                            {next(...args)(...renderArgs)}
-                        </div>) : (<div
-                            className={Constants.receivedMessageClassName}
-                            style={userMessageStyles} aria-hidden="true">
-                            {next(...args)(...renderArgs)}
-                            <IconButton iconProps={chatBotIcon} ariaLabel="ChatGpt" />
-                        </div>)}
-                    <hr style={hrStyles} />
+                <div
+                    className={card.activity.from.role === DirectLineSenderRole.User ? Constants.sentMessageClassName : Constants.receivedMessageClassName}
+                    style={userMessageStyles} aria-hidden="true">
+                    {next(...args)(...renderArgs)}
                 </div>
             );
         }
     }
     return next(...args);
-};
-const chatBotIcon: IIconProps = { iconName: "Robot" };
-
-const hrStyles = {
-    color: "lightgrey",
-    borderStyle: "dashed",
-    borderWidth: "1px"
 };
