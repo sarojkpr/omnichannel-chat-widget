@@ -5,6 +5,7 @@ import { NotDeliveredTimestamp } from "./timestamps/NotDeliveredTimestamp";
 import React from "react";
 import { SendStatus } from "../../enums/SendStatus";
 import { SendingTimestamp } from "./timestamps/SendingTimestamp";
+import { BroadcastService } from "../../../../..";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any, react/display-name, @typescript-eslint/no-unused-vars
 export const activityStatusMiddleware = () => (next: any) => (args: any) => {
@@ -42,7 +43,7 @@ export const activityStatusMiddleware = () => (next: any) => (args: any) => {
             sameTimestampGroupTemp = false;
         }
     }
-    
+
     if (current_tags && current_tags.includes(Constants.systemMessageTag) || (sameTimestampGroupTemp && sendState === SendStatus.Sent)) {
         return;
     } else {

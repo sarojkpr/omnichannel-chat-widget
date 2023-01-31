@@ -70,3 +70,7 @@ export const shouldShowCallingContainer = (state: ILiveChatWidgetContext) => {
     return (state.appStates.conversationState === ConversationState.Active) &&
         state.appStates.e2vvEnabled;
 };
+
+export const shouldShowLcwModalComponent = (state: ILiveChatWidgetContext) => {
+    return state.uiStates.showLcwModalComponent;
+};

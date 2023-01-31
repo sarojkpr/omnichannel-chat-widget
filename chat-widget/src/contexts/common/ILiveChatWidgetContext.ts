@@ -54,5 +54,6 @@ export interface ILiveChatWidgetContext {
         disableSelfVideo: boolean; // true when self video is off
         isIncomingCall: boolean; //incoming/currentcall
         focusChatButton: boolean; // true after the first rendering for chat button
+        showLcwModalComponent: boolean;
     };
 }

@@ -11,6 +11,7 @@ import {
     shouldShowConfirmationPane,
     shouldShowEmailTranscriptPane,
     shouldShowHeader,
+    shouldShowLcwModalComponent,
     shouldShowLoadingPane,
     shouldShowOutOfOfficeHoursPane,
     shouldShowPostChatLoadingPane,
@@ -66,6 +67,7 @@ import { startProactiveChat } from "../common/startProactiveChat";
 import useChatAdapterStore from "../../../hooks/useChatAdapterStore";
 import useChatContextStore from "../../../hooks/useChatContextStore";
 import useChatSDKStore from "../../../hooks/useChatSDKStore";
+import LcwModalComponent from "../../LcwModalComponent/LcwModalComponent";
 
 export const LiveChatWidgetStateful = (props: ILiveChatWidgetProps) => {
     const [state, dispatch]: [ILiveChatWidgetContext, Dispatch<ILiveChatWidgetAction>] = useChatContextStore();
@@ -499,6 +501,8 @@ export const LiveChatWidgetStateful = (props: ILiveChatWidgetProps) => {
                     {createFooter(props, state)}
 
                     {shouldShowEmailTranscriptPane(state) && (decodeComponentString(props.componentOverrides?.emailTranscriptPane) || <EmailTranscriptPaneStateful {...props.emailTranscriptPane} />)}
+
+                    {shouldShowLcwModalComponent(state) && <LcwModalComponent />}
                 </Stack>
             </Composer>
         </>
