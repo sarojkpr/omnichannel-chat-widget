@@ -56,7 +56,7 @@ const config: Configuration = {
                 warnings: false,
                 errors: true
             }
-        }
+        },
     },
 };
 

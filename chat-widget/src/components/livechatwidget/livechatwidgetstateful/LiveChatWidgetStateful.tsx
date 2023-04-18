@@ -362,7 +362,6 @@ export const LiveChatWidgetStateful = (props: ILiveChatWidgetProps) => {
             props.controlProps?.widgetInstanceId ?? "");
 
         BroadcastService.getMessageByEventName(endChatEventName).subscribe((msg: ICustomEvent) => {
-            console.log("Receiving end chat event", JSON.stringify(msg.payload));
             if (msg.payload !== uwid.current) {
                 endChat(props, chatSDK, state, dispatch, setAdapter, setWebChatStyles, adapter, true, false, false);
                 return;
