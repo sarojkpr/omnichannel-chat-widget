@@ -1,5 +1,5 @@
-import { ParticipantType } from "../../../common/Constants";
 import MockAdapter from "./mockadapter";
+import { ParticipantType } from "../../../common/Constants";
 
 export class MockChatSDK {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,6 +12,11 @@ export class MockChatSDK {
         orgId: "00000000-0000-0000-0000-000000000000",
         orgUrl: "https://contoso.crm.dynamics.com",
     }
+
+    public async initialize() {
+        return this.getLiveChatConfig();
+    }
+
     public async startChat() {
         await this.sleep(1000);
     }
@@ -60,6 +65,23 @@ export class MockChatSDK {
     }
 
     public getVoiceVideoCalling() {
+        return null;
+    }
+
+    public setAuthTokenProvider(){
+        return null;
+    }
+
+    public getLiveChatConfig() {
+        return {
+            LiveWSAndLiveChatEngJoin: {
+                msdyn_postconversationsurveyenable: "true",
+                msdyn_conversationmode: "192350000"
+            }
+        };
+    }
+
+    public sendTypingEvent() {
         return null;
     }
 }

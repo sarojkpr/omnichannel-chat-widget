@@ -31,6 +31,11 @@ export const ChatButtonStateful = (props: IChatButtonStatefulParams) => {
         
         if (state.appStates.isMinimized) {
             dispatch({ type: LiveChatWidgetActionType.SET_MINIMIZED, payload: false });
+            dispatch({ type: LiveChatWidgetActionType.SET_UNREAD_MESSAGE_COUNT, payload: 0 });
+            // If chat is minimized and then unminimized, start a chat if convesation state is closed.
+            if (state.appStates.conversationState === ConversationState.Closed) {
+                await startChat();
+            }
         } else {
             await startChat();
         }
@@ -58,11 +63,9 @@ export const ChatButtonStateful = (props: IChatButtonStatefulParams) => {
             TelemetryHelper.logActionEvent(LogLevel.INFO, {
                 Event: TelemetryEvent.LCWChatButtonClicked
             });
-            if (state.appStates.isMinimized) {
-                dispatch({ type: LiveChatWidgetActionType.SET_MINIMIZED, payload: false });
-            } else {
-                dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.OutOfOffice });
-            }
+
+            state.appStates.isMinimized && dispatch({ type: LiveChatWidgetActionType.SET_MINIMIZED, payload: false });
+            dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.OutOfOffice });
         },
         unreadMessageString: props.buttonProps?.controlProps?.unreadMessageString,
         ...outOfOfficeButtonProps?.controlProps

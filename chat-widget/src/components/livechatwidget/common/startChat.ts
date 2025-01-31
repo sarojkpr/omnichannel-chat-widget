@@ -1,26 +1,29 @@
 import { BroadcastEvent, LogLevel, TelemetryEvent } from "../../../common/telemetry/TelemetryConstants";
-import { ChatSDKError, Constants, LiveWorkItemState } from "../../../common/Constants";
-import { checkContactIdError, createTimer, getConversationDetailsCall, getStateFromCache, getWidgetCacheIdfromProps, isNullOrEmptyString, isUndefinedOrEmpty } from "../../../common/utils";
+import { Constants, LiveWorkItemState, WidgetLoadCustomErrorString, WidgetLoadTelemetryMessage } from "../../../common/Constants";
+import { checkContactIdError, createTimer, getConversationDetailsCall, getStateFromCache, getWidgetCacheIdfromProps, isNullOrEmptyString, isNullOrUndefined, isUndefinedOrEmpty } from "../../../common/utils";
 import { getAuthClientFunction, handleAuthentication } from "./authHelper";
+import { handleChatReconnect, isPersistentEnabled, isReconnectEnabled } from "./reconnectChatHelper";
+import { handleStartChatError, logWidgetLoadComplete } from "./startChatErrorHandler";
 
 import { ActivityStreamHandler } from "./ActivityStreamHandler";
 import { BroadcastService } from "@microsoft/omnichannel-chat-components";
 import { ConversationState } from "../../../contexts/common/ConversationState";
 import { Dispatch } from "react";
+import { FacadeChatSDK } from "../../../common/facades/FacadeChatSDK";
 import { ILiveChatWidgetAction } from "../../../contexts/common/ILiveChatWidgetAction";
 import { ILiveChatWidgetContext } from "../../../contexts/common/ILiveChatWidgetContext";
 import { ILiveChatWidgetProps } from "../interfaces/ILiveChatWidgetProps";
 import { LiveChatWidgetActionType } from "../../../contexts/common/LiveChatWidgetActionType";
-import { NotificationHandler } from "../../webchatcontainerstateful/webchatcontroller/notification/NotificationHandler";
-import { NotificationScenarios } from "../../webchatcontainerstateful/webchatcontroller/enums/NotificationScenarios";
 import StartChatOptionalParams from "@microsoft/omnichannel-chat-sdk/lib/core/StartChatOptionalParams";
 import { TelemetryHelper } from "../../../common/telemetry/TelemetryHelper";
 import { TelemetryTimers } from "../../../common/telemetry/TelemetryManager";
+import { chatSDKStateCleanUp } from "./endChat";
 import { createAdapter } from "./createAdapter";
 import { createOnNewAdapterActivityHandler } from "../../../plugins/newMessageEventHandler";
-import { handleChatReconnect } from "./reconnectChatHelper";
+import { isPersistentChatEnabled } from "./liveChatConfigUtils";
 import { setPostChatContextAndLoadSurvey } from "./setPostChatContextAndLoadSurvey";
-import { updateSessionDataForTelemetry } from "./updateSessionDataForTelemetry";
+import { shouldSetPreChatIfPersistentChat } from "./persistentChatHelper";
+import { updateTelemetryData } from "./updateSessionDataForTelemetry";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let optionalParams: StartChatOptionalParams = {};
@@ -30,15 +33,30 @@ let widgetInstanceId: any | "";
 let popoutWidgetInstanceId: any | "";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const prepareStartChat = async (props: ILiveChatWidgetProps, chatSDK: any, state: ILiveChatWidgetContext, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any) => {
+const setAuthenticationIfApplicable = async (props: ILiveChatWidgetProps | undefined, facadeChatSDK: FacadeChatSDK) => {
+    const chatConfig = props?.chatConfig;
+    const getAuthToken = props?.getAuthToken;
+    const authClientFunction = getAuthClientFunction(chatConfig);
+    if (getAuthToken && authClientFunction) {
+        // set auth token to chat sdk before start chat
+        const authSuccess = await handleAuthentication(facadeChatSDK.getChatSDK(), chatConfig, getAuthToken);
+        if (!authSuccess.result) {
+            throw new Error(WidgetLoadCustomErrorString.AuthenticationFailedErrorString);
+        }
+    }
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const prepareStartChat = async (props: ILiveChatWidgetProps, facadeChatSDK: FacadeChatSDK, state: ILiveChatWidgetContext, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any) => {
     optionalParams = {}; //Resetting to ensure no stale values
     widgetInstanceId = getWidgetCacheIdfromProps(props);
 
     // reconnect > chat from cache
-    await handleChatReconnect(chatSDK, props, dispatch, setAdapter, initStartChat, state);
-    // If chat reconnect has kicked in chat state will become Active or Reconnect. So just exit, else go next
-    if (state.appStates.conversationState === ConversationState.Active || state.appStates.conversationState === ConversationState.ReconnectChat) {
-        return;
+    if (isReconnectEnabled(props.chatConfig) === true && !isPersistentEnabled(props.chatConfig)) {
+        const shouldStartChatNormally = await handleChatReconnect(facadeChatSDK, props, dispatch, setAdapter, initStartChat, state);
+        if (!shouldStartChatNormally) {
+            return;
+        }
     }
 
     // Check if there is any active popout chats in cache
@@ -47,7 +65,7 @@ const prepareStartChat = async (props: ILiveChatWidgetProps, chatSDK: any, state
     }
 
     // Can connect to existing chat session
-    if (await canConnectToExistingChat(props, chatSDK, state, dispatch, setAdapter)) {
+    if (await canConnectToExistingChat(props, facadeChatSDK, state, dispatch, setAdapter)) {
         return;
     }
 
@@ -55,38 +73,80 @@ const prepareStartChat = async (props: ILiveChatWidgetProps, chatSDK: any, state
     const isProactiveChat = state.appStates.conversationState === ConversationState.ProactiveChat;
     const isPreChatEnabledInProactiveChat = state.appStates.proactiveChatStates.proactiveChatEnablePrechat;
 
+    // Setting auth settings to OC API to retrieve existing persistent chat session before start chat if any
+    if (isPersistentEnabled(props.chatConfig)) {
+        await setAuthenticationIfApplicable(props, facadeChatSDK);
+    }
+
     //Setting PreChat and intiate chat
-    await setPreChatAndInitiateChat(chatSDK, dispatch, setAdapter, isProactiveChat, isPreChatEnabledInProactiveChat, state, props);
+    await setPreChatAndInitiateChat(facadeChatSDK, dispatch, setAdapter, isProactiveChat, isPreChatEnabledInProactiveChat, state, props);
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const setPreChatAndInitiateChat = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, isProactiveChat?: boolean | false, proactiveChatEnablePrechatState?: boolean | false, state?: ILiveChatWidgetContext, props?: ILiveChatWidgetProps) => {
-    //Handle reconnect scenario
+const setPreChatAndInitiateChat = async (facadeChatSDK: FacadeChatSDK, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, isProactiveChat?: boolean | false, proactiveChatEnablePrechatState?: boolean | false, state?: ILiveChatWidgetContext, props?: ILiveChatWidgetProps) => {
+
+    // This reset needs to be done before to load prechat, because the conversation state changes from close to prechat
+    if (state?.appStates.conversationState === ConversationState.Closed) {
+        // Preventive reset to avoid starting chat with previous requestId which could potentially cause problems
+        chatSDKStateCleanUp(facadeChatSDK.getChatSDK());
+    }
 
     // Getting prechat Survey Context
     const parseToJson = false;
-    const preChatSurveyResponse: string = await chatSDK.getPreChatSurvey(parseToJson);
-    const showPrechat = isProactiveChat ? preChatSurveyResponse && proactiveChatEnablePrechatState : (preChatSurveyResponse && !props?.controlProps?.hidePreChatSurveyPane);
+    const preChatSurveyResponse: string = props?.preChatSurveyPaneProps?.controlProps?.payload ?? await facadeChatSDK.getPreChatSurvey(parseToJson);
+    let showPrechat = isProactiveChat ? preChatSurveyResponse && proactiveChatEnablePrechatState : (preChatSurveyResponse && !props?.controlProps?.hidePreChatSurveyPane);
+    showPrechat = await shouldSetPreChatIfPersistentChat(facadeChatSDK.getChatSDK(), state?.domainStates?.liveChatConfig?.LiveWSAndLiveChatEngJoin?.msdyn_conversationmode, showPrechat as boolean);
 
     if (showPrechat) {
-        dispatch({ type: LiveChatWidgetActionType.SET_PRE_CHAT_SURVEY_RESPONSE, payload: preChatSurveyResponse });
-        dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.Prechat });
-        return;
+        const isOutOfOperatingHours = state?.domainStates?.liveChatConfig?.LiveWSAndLiveChatEngJoin?.OutOfOperatingHours?.toString().toLowerCase() === "true";
+        if (isOutOfOperatingHours) {
+            state?.appStates.isMinimized && dispatch({ type: LiveChatWidgetActionType.SET_MINIMIZED, payload: false });
+            dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.OutOfOffice });
+            return;
+        } else {
+
+            TelemetryHelper.logLoadingEvent(LogLevel.INFO, { Event: TelemetryEvent.PrechatSurveyExpected });
+
+            dispatch({ type: LiveChatWidgetActionType.SET_PRE_CHAT_SURVEY_RESPONSE, payload: preChatSurveyResponse });
+            dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.Prechat });
+            
+            // If minimized, maximize the chat, if the state is missing, consider it as minimized
+            if (state?.appStates.isMinimized == undefined || state?.appStates?.isMinimized === true) {
+                dispatch({ type: LiveChatWidgetActionType.SET_MINIMIZED, payload: false });
+
+                // this event will notify the upper layer to maximize the widget, an event missing during multi-tab scenario.
+                BroadcastService.postMessage({
+                    eventName: BroadcastEvent.MaximizeChat,
+                    payload: {
+                        height: state?.domainStates?.widgetSize?.height,
+                        width: state?.domainStates?.widgetSize?.width
+                    }
+                });
+            }
+            return;
+        }
     }
 
     //Initiate start chat
     dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.Loading });
     const optionalParams: StartChatOptionalParams = { isProactiveChat };
-    await initStartChat(chatSDK, dispatch, setAdapter, state, props, optionalParams);
+    await initStartChat(facadeChatSDK, dispatch, setAdapter, state, props, optionalParams);
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const initStartChat = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, state: ILiveChatWidgetContext | undefined, props?: ILiveChatWidgetProps, params?: StartChatOptionalParams, persistedState?: any) => {
+const initStartChat = async (facadeChatSDK: FacadeChatSDK, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, state: ILiveChatWidgetContext | undefined, props?: ILiveChatWidgetProps, params?: StartChatOptionalParams, persistedState?: any) => {
     let isStartChatSuccessful = false;
-    const chatConfig = props?.chatConfig;
-    const getAuthToken = props?.getAuthToken;
-    const hideErrorUIPane = props?.controlProps?.hideErrorUIPane;
+    const persistentChatEnabled = await isPersistentChatEnabled(state?.domainStates?.liveChatConfig?.LiveWSAndLiveChatEngJoin?.msdyn_conversationmode);
+
+    if (state?.appStates.conversationState === ConversationState.Closed) {
+        // Preventive reset to avoid starting chat with previous requestId which could potentially cause problems
+        chatSDKStateCleanUp(facadeChatSDK.getChatSDK());
+    }
+
     try {
+        // Clear disconnect state on start chat
+        state?.appStates?.chatDisconnectEventReceived && dispatch({ type: LiveChatWidgetActionType.SET_CHAT_DISCONNECT_EVENT_RECEIVED, payload: false });
+
         //Start widget load timer
         TelemetryTimers.WidgetLoadTimer = createTimer();
 
@@ -95,15 +155,8 @@ const initStartChat = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAct
             Description: "Widget loading started",
         });
 
-        const authClientFunction = getAuthClientFunction(chatConfig);
-        if (getAuthToken && authClientFunction) {
-            // set auth token to chat sdk before start chat
-            const authSuccess = await handleAuthentication(chatSDK, chatConfig, getAuthToken);
-            if (!authSuccess) {
-                // Replacing with error ui
-                throw new Error("Authentication was not successful");
-            }
-        }
+        // Auth token retrieval needs to happen during start chat to support pop-out chat
+        await setAuthenticationIfApplicable(props, facadeChatSDK);
 
         //Check if chat retrieved from cache
         if (persistedState || params?.liveChatContext) {
@@ -125,7 +178,7 @@ const initStartChat = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAct
                 portalContactId: window.Microsoft?.Dynamic365?.Portal?.User?.contactId
             };
             const startChatOptionalParams: StartChatOptionalParams = Object.assign({}, params, optionalParams, defaultOptionalParams);
-            await chatSDK.startChat(startChatOptionalParams);
+            await facadeChatSDK.startChat(startChatOptionalParams);
             isStartChatSuccessful = true;
         } catch (error) {
             checkContactIdError(error);
@@ -135,17 +188,18 @@ const initStartChat = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAct
                     exception: `Failed to setup startChat: ${error}`
                 }
             });
+            BroadcastService.postMessage({
+                eventName: BroadcastEvent.OnWidgetError,
+                payload: {
+                    errorMessage: error,
+                }
+            });
+
             isStartChatSuccessful = false;
             throw error;
         }
 
-        // New adapter creation
-        const newAdapter = await createAdapter(chatSDK);
-        setAdapter(newAdapter);
-
-        const chatToken = await chatSDK.getChatToken();
-        dispatch({ type: LiveChatWidgetActionType.SET_CHAT_TOKEN, payload: chatToken });
-        newAdapter?.activity$?.subscribe(createOnNewAdapterActivityHandler(chatToken?.chatId, chatToken?.visitorId));
+        await createAdapterAndSubscribe(facadeChatSDK, dispatch, setAdapter, props);
 
         // Set app state to Active
         if (isStartChatSuccessful) {
@@ -154,71 +208,30 @@ const initStartChat = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAct
             dispatch({ type: LiveChatWidgetActionType.SET_START_CHAT_FAILING, payload: false });
             dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.Active });
         }
-
+        
         if (persistedState) {
             dispatch({ type: LiveChatWidgetActionType.SET_WIDGET_STATE, payload: persistedState });
-            TelemetryHelper.logLoadingEvent(LogLevel.INFO, {
-                Event: TelemetryEvent.WidgetLoadComplete,
-                Description: "Widget load complete. Persisted state retrieved",
-                ElapsedTimeInMilliseconds: TelemetryTimers?.WidgetLoadTimer?.milliSecondsElapsed
-            });
-            await setPostChatContextAndLoadSurvey(chatSDK, dispatch, true);
+            logWidgetLoadComplete(WidgetLoadTelemetryMessage.PersistedStateRetrievedMessage);
+            // Set post chat context in state, load in background to do not block the load
+            setPostChatContextAndLoadSurvey(facadeChatSDK, dispatch, true);
             return;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const liveChatContext: any = await chatSDK?.getCurrentLiveChatContext();
-        dispatch({ type: LiveChatWidgetActionType.SET_LIVE_CHAT_CONTEXT, payload: liveChatContext });
+        // Persistent Chat relies on the `reconnectId` retrieved from reconnectablechats API to reconnect upon start chat and not `liveChatContext`
+        if (!persistentChatEnabled) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const liveChatContext: any = await facadeChatSDK?.getCurrentLiveChatContext();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            dispatch({ type: LiveChatWidgetActionType.SET_LIVE_CHAT_CONTEXT, payload: liveChatContext });
+        }
 
-        TelemetryHelper.logLoadingEvent(LogLevel.INFO, {
-            Event: TelemetryEvent.WidgetLoadComplete,
-            Description: "Widget load complete",
-            ElapsedTimeInMilliseconds: TelemetryTimers?.WidgetLoadTimer?.milliSecondsElapsed
-        });
-
-        // Set post chat context in state
-        // Commenting this for now as post chat context is fetched during end chat
-        await setPostChatContextAndLoadSurvey(chatSDK, dispatch);
-
+        logWidgetLoadComplete();
+        // Set post chat context in state, load in background to do not block the load
+        setPostChatContextAndLoadSurvey(facadeChatSDK, dispatch);
         // Updating chat session detail for telemetry
-        await updateSessionDataForTelemetry(chatSDK, dispatch);
+        await updateTelemetryData(facadeChatSDK, dispatch);
     } catch (ex) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if ((ex as any).message === ChatSDKError.WidgetUseOutsideOperatingHour) {
-            dispatch({ type: LiveChatWidgetActionType.SET_OUTSIDE_OPERATING_HOURS, payload: true });
-            dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.OutOfOffice });
-            TelemetryHelper.logLoadingEvent(LogLevel.INFO, {
-                Event: TelemetryEvent.WidgetLoadComplete,
-                Description: "Widget load complete. Widget is OOOH.",
-                ElapsedTimeInMilliseconds: TelemetryTimers?.WidgetLoadTimer?.milliSecondsElapsed
-            });
-            return;
-        }
-
-        TelemetryHelper.logLoadingEvent(LogLevel.ERROR, {
-            Event: TelemetryEvent.WidgetLoadFailed,
-            ExceptionDetails: {
-                Exception: `Widget load Failed: ${ex}`
-            },
-            ElapsedTimeInMilliseconds: TelemetryTimers?.WidgetLoadTimer?.milliSecondsElapsed
-        });
-        NotificationHandler.notifyError(NotificationScenarios.Connection, "Start Chat Failed: " + ex);
-        dispatch({ type: LiveChatWidgetActionType.SET_START_CHAT_FAILING, payload: true });
-        if (!hideErrorUIPane) {
-            // Set app state to failing start chat if hideErrorUI is not turned on
-            TelemetryHelper.logLoadingEvent(LogLevel.INFO, {
-                Event: TelemetryEvent.ErrorUIPaneLoaded,
-                Description: "Error UI Pane Loaded"
-            });
-        }
-        // Show the loading pane in other cases for failure, this will help for both hideStartChatButton case
-        dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.Loading });
-
-        // If sessionInit was successful but LCW startchat failed due to some reason e.g adapter didn't load
-        // we need to directly endChat to avoid leaving ghost chats in OC, not disturbing any other UI state 
-        if (isStartChatSuccessful === true) {
-            await forceEndChat(chatSDK);
-        }
+        handleStartChatError(dispatch, facadeChatSDK, props, ex, isStartChatSuccessful);
     } finally {
         optionalParams = {};
         widgetInstanceId = "";
@@ -226,18 +239,19 @@ const initStartChat = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAct
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const forceEndChat = async (chatSDK: any) => {
-    TelemetryHelper.logLoadingEvent(LogLevel.ERROR, {
-        Event: TelemetryEvent.WidgetLoadFailed,
-        ExceptionDetails: {
-            Exception: "SessionInit was successful, but widget load failed."
-        }
-    });
-    chatSDK?.endChat();
-};
+const createAdapterAndSubscribe = async (facadeChatSDK: FacadeChatSDK, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, props?: ILiveChatWidgetProps) => {
+    // New adapter creation
+    const newAdapter = await createAdapter(facadeChatSDK, props);
+    setAdapter(newAdapter);
 
+    const chatToken = await facadeChatSDK?.getChatToken();
+    dispatch({ type: LiveChatWidgetActionType.SET_CHAT_TOKEN, payload: chatToken });
+    if (chatToken?.chatId && chatToken?.visitorId) {
+        newAdapter?.activity$?.subscribe(createOnNewAdapterActivityHandler(chatToken.chatId, chatToken.visitorId));
+    }
+};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const canConnectToExistingChat = async (props: ILiveChatWidgetProps, chatSDK: any, state: ILiveChatWidgetContext, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any) => {
+const canConnectToExistingChat = async (props: ILiveChatWidgetProps, facadeChatSDK: FacadeChatSDK, state: ILiveChatWidgetContext, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any) => {
     // By pass this function in case of popout chat
     if (state?.appStates?.hideStartChatButton === true) {
         return false;
@@ -251,10 +265,9 @@ const canConnectToExistingChat = async (props: ILiveChatWidgetProps, chatSDK: an
         persistedState?.appStates?.conversationState === ConversationState.Active) {
         dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.Loading });
         const optionalParams = { liveChatContext: persistedState?.domainStates?.liveChatContext };
-        await initStartChat(chatSDK, dispatch, setAdapter, state, props, optionalParams, persistedState);
+        await initStartChat(facadeChatSDK, dispatch, setAdapter, state, props, optionalParams, persistedState);
         return true;
     }
-
     return false;
 };
 
@@ -323,40 +336,35 @@ const canStartPopoutChat = async (props: ILiveChatWidgetProps) => {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const checkIfConversationStillValid = async (chatSDK: any, dispatch: Dispatch<ILiveChatWidgetAction>, state: ILiveChatWidgetContext): Promise<boolean> => {
+const checkIfConversationStillValid = async (facadeChatSDK: FacadeChatSDK, dispatch: Dispatch<ILiveChatWidgetAction>, state: ILiveChatWidgetContext): Promise<boolean> => {
     const requestIdFromCache = state.domainStates?.liveChatContext?.requestId;
+    const liveChatContext = state?.domainStates?.liveChatContext;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let conversationDetails: any = undefined;
-
-    //Preserve current requestId
-    const currentRequestId = chatSDK.requestId ?? "";
+    // Preserve current requestId
+    const currentRequestId = facadeChatSDK.getChatSDK().requestId ?? "";
     dispatch({ type: LiveChatWidgetActionType.SET_INITIAL_CHAT_SDK_REQUEST_ID, payload: currentRequestId });
 
     try {
-        chatSDK.requestId = requestIdFromCache;
-        conversationDetails = await getConversationDetailsCall(chatSDK);
+        facadeChatSDK.getChatSDK().requestId = requestIdFromCache;
+        conversationDetails = await getConversationDetailsCall(facadeChatSDK, liveChatContext);
 
-        if (Object.keys(conversationDetails).length === 0) {
-            chatSDK.requestId = currentRequestId;
-            return false;
-        }
-
-        if (conversationDetails.state === LiveWorkItemState.Closed || conversationDetails.state === LiveWorkItemState.WrapUp) {
+        if (Object.keys(conversationDetails).length === 0 || isNullOrUndefined(conversationDetails.state) || conversationDetails.state === LiveWorkItemState.Closed || conversationDetails.state === LiveWorkItemState.WrapUp) {           
             dispatch({ type: LiveChatWidgetActionType.SET_LIVE_CHAT_CONTEXT, payload: undefined });
-            chatSDK.requestId = currentRequestId;
+            if (currentRequestId) {
+                facadeChatSDK.getChatSDK().requestId = currentRequestId;
+            }
             return false;
         }
-
         return true;
     }
-    catch (erorr) {
+    catch (error) {
         TelemetryHelper.logActionEvent(LogLevel.ERROR, {
             Event: TelemetryEvent.GetConversationDetailsException,
             ExceptionDetails: {
-                exception: `Conversation is not valid: ${erorr}`
+                exception: `Conversation is not valid: ${error}`
             }
         });
-        chatSDK.requestId = currentRequestId;
         return false;
     }
 };

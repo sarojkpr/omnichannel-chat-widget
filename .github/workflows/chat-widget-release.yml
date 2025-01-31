@@ -2,8 +2,6 @@ name: chat-widget-release
 
 on:
   push:
-    branches: 
-      - main
     tags:
       - 'w-v*'
     paths:
@@ -18,7 +16,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 16.X
+          node-version: 20.X
       - name: Update package version
         working-directory: chat-widget
         run: npx version-from-git --no-git-tag-version
@@ -37,6 +35,8 @@ jobs:
         run: yarn test:unit
       - name: Build Storybook
         working-directory: chat-widget
+        env :
+          NODE_OPTIONS: --openssl-legacy-provider
         run: yarn build-storybook
       - name: VRT Tests
         working-directory: chat-widget

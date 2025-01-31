@@ -13,6 +13,7 @@ import { version as chatSdkVersion } from "@microsoft/omnichannel-chat-sdk/packa
 import { version as chatWidgetVersion } from "../../package.json";
 import { getCustomizationJson } from "./getCustomizationJson";
 import { memoryDataStore } from "./Common/MemoryDataStore";
+import getMockChatSDKIfApplicable from "./getMockChatSDKIfApplicable";
 
 let liveChatWidgetProps;
 
@@ -25,13 +26,17 @@ const main = async () => {
     const appId = urlParams.get("data-app-id");
 
     const script = document.getElementById("oc-lcw-script");
+    const customizationJson = await getCustomizationJson();
     const omnichannelConfig = {
         orgId: orgId ?? script?.getAttribute("data-org-id"),
         orgUrl: orgUrl ?? script?.getAttribute("data-org-url"),
         widgetId: appId ?? script?.getAttribute("data-app-id")
     };
-    const chatSDK = new OmnichannelChatSDK(omnichannelConfig);
-    await chatSDK.initialize();
+
+    let chatSDK = new OmnichannelChatSDK(omnichannelConfig);
+    chatSDK = getMockChatSDKIfApplicable(chatSDK, customizationJson);
+
+    await chatSDK.initialize({useParallelLoad: true});
     const chatConfig = await chatSDK.getLiveChatConfig();
     memoryDataStore();
     await getUnreadMessageCount();
@@ -77,13 +82,22 @@ const main = async () => {
         BroadcastService.postMessage(setCustomContextEvent);
     };
 
-    const startProactiveChat = (notificationUIConfig, showPrechat, inNewWindow) => {
+    const endChat = () => {
+        const endChatEvent = {
+            eventName: "InitiateEndChat"
+        };
+        BroadcastService.postMessage(endChatEvent);
+    };
+
+    const startProactiveChat = () => {
         const startProactiveChatEvent = {
             eventName: "StartProactiveChat",
             payload: {
-                bodyTitle: (notificationUIConfig && notificationUIConfig.message) ? notificationUIConfig.message : "Hello Customer",
-                showPrechat: showPrechat,
-                inNewWindow: inNewWindow
+                notificationConfig: {
+                    message: "Hi, how may I help you?" // title text
+                },
+                enablePreChat: true, // enablePreChat
+                inNewWindow: false
             }
         };
         BroadcastService.postMessage(startProactiveChatEvent);
@@ -92,8 +106,9 @@ const main = async () => {
     window["switchConfig"] = switchConfig;
     window["startProactiveChat"] = startProactiveChat;
     window["startChat"] = startChat;
+    window["endChat"] = endChat;
     window["setCustomContext"] = setCustomContext;
-    switchConfig(await getCustomizationJson());
+    switchConfig(customizationJson);
 };
 
 main();

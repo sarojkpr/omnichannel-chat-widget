@@ -1,8 +1,9 @@
 import { LogLevel, TelemetryEvent } from "../../common/telemetry/TelemetryConstants";
-import React, { Dispatch, useEffect, useState } from "react";
+import React, { Dispatch, useCallback, useEffect, useState } from "react";
 import { findAllFocusableElement, findParentFocusableElementsWithoutChildContainer, formatTemplateString, preventFocusToMoveOutOfElement, setFocusOnElement, setFocusOnSendBox, setTabIndices } from "../../common/utils";
 
 import { DimLayer } from "../dimlayer/DimLayer";
+import { FacadeChatSDK } from "../../common/facades/FacadeChatSDK";
 import { IChatTranscriptBody } from "./interfaces/IChatTranscriptBody";
 import { IEmailTranscriptPaneProps } from "./interfaces/IEmailTranscriptPaneProps";
 import { IInputValidationPaneControlProps } from "@microsoft/omnichannel-chat-components/lib/types/components/inputvalidationpane/interfaces/IInputValidationPaneControlProps";
@@ -14,16 +15,16 @@ import { NotificationHandler } from "../webchatcontainerstateful/webchatcontroll
 import { NotificationScenarios } from "../webchatcontainerstateful/webchatcontroller/enums/NotificationScenarios";
 import { Regex } from "../../common/Constants";
 import { TelemetryHelper } from "../../common/telemetry/TelemetryHelper";
-import useChatContextStore from "../../hooks/useChatContextStore";
-import useChatSDKStore from "../../hooks/useChatSDKStore";
 import { defaultMiddlewareLocalizedTexts } from "../webchatcontainerstateful/common/defaultProps/defaultMiddlewareLocalizedTexts";
+import useChatContextStore from "../../hooks/useChatContextStore";
+import useFacadeSDKStore from "../../hooks/useFacadeChatSDKStore";
 
 export const EmailTranscriptPaneStateful = (props: IEmailTranscriptPaneProps) => {
     const initialTabIndexMap: Map<string, number> = new Map();
     let elements: HTMLElement[] | null = [];
     const [state, dispatch]: [ILiveChatWidgetContext, Dispatch<ILiveChatWidgetAction>] = useChatContextStore();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const chatSDK: any = useChatSDKStore();
+    
+    const [facadeChatSDK]: [FacadeChatSDK | undefined, (facadeChatSDK: FacadeChatSDK) => void] = useFacadeSDKStore();
     const [initialEmail, setInitialEmail] = useState("");
     const closeEmailTranscriptPane = () => {
         dispatch({ type: LiveChatWidgetActionType.SET_SHOW_EMAIL_TRANSCRIPT_PANE, payload: false });
@@ -37,35 +38,38 @@ export const EmailTranscriptPaneStateful = (props: IEmailTranscriptPaneProps) =>
         setTabIndices(elements, initialTabIndexMap, true);
     };
 
+    const onSend = useCallback(async (email: string) => {
+        const liveChatContext = state?.domainStates?.liveChatContext;
+        closeEmailTranscriptPane();
+        const chatTranscriptBody: IChatTranscriptBody = {
+            emailAddress: email,
+            attachmentMessage: props?.attachmentMessage ?? "The following attachment was uploaded during the conversation:"
+        };
+        try {
+            await facadeChatSDK?.emailLiveChatTranscript(chatTranscriptBody, {liveChatContext});
+            NotificationHandler.notifySuccess(NotificationScenarios.EmailAddressSaved, defaultMiddlewareLocalizedTexts?.MIDDLEWARE_BANNER_FILE_EMAIL_ADDRESS_RECORDED_SUCCESS as string);
+            TelemetryHelper.logActionEvent(LogLevel.INFO, {
+                Event: TelemetryEvent.EmailTranscriptSent,
+                Description: "Transcript sent to email successfully."
+            });
+        } catch (ex) {
+            TelemetryHelper.logActionEvent(LogLevel.ERROR, {
+                Event: TelemetryEvent.EmailTranscriptFailed,
+                ExceptionDetails: {
+                    exception: ex
+                }
+            });
+            const message = formatTemplateString(defaultMiddlewareLocalizedTexts.MIDDLEWARE_BANNER_FILE_EMAIL_ADDRESS_RECORDED_ERROR as string, [email]);
+            NotificationHandler.notifyError(
+                NotificationScenarios.EmailTranscriptError,
+                props?.bannerMessageOnError ?? message);
+        }
+    }, [props.attachmentMessage, props.bannerMessageOnError, facadeChatSDK, state.domainStates.liveChatContext]);
+
     const controlProps: IInputValidationPaneControlProps = {
         id: "oclcw-emailTranscriptDialogContainer",
         dir: state.domainStates.globalDir,
-        onSend: async (email: string) => {
-            closeEmailTranscriptPane();
-            const chatTranscriptBody: IChatTranscriptBody = {
-                emailAddress: email,
-                attachmentMessage: props?.attachmentMessage ?? "The following attachment was uploaded during the conversation:"
-            };
-            try {
-                await chatSDK?.emailLiveChatTranscript(chatTranscriptBody);
-                NotificationHandler.notifySuccess(NotificationScenarios.EmailAddressSaved, defaultMiddlewareLocalizedTexts?.MIDDLEWARE_BANNER_FILE_EMAIL_ADDRESS_RECORDED_SUCCESS as string);
-                TelemetryHelper.logActionEvent(LogLevel.INFO, {
-                    Event: TelemetryEvent.EmailTranscriptSent,
-                    Description: "Transcript sent to email successfully."
-                });
-            } catch (ex) {
-                TelemetryHelper.logActionEvent(LogLevel.ERROR, {
-                    Event: TelemetryEvent.EmailTranscriptFailed,
-                    ExceptionDetails: {
-                        exception: ex
-                    }
-                });
-                const message = formatTemplateString(defaultMiddlewareLocalizedTexts.MIDDLEWARE_BANNER_FILE_EMAIL_ADDRESS_RECORDED_ERROR as string, [email]);
-                NotificationHandler.notifyError(
-                    NotificationScenarios.EmailTranscriptError,
-                    props?.bannerMessageOnError ?? message);
-            }
-        },
+        onSend,
         onCancel: () => {
             TelemetryHelper.logActionEvent(LogLevel.INFO, { Event: TelemetryEvent.EmailTranscriptCancelButtonClicked, Description: "Email Transcript cancel button clicked." });
             closeEmailTranscriptPane();

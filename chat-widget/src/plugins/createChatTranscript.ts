@@ -1,6 +1,9 @@
 /* eslint-disable no-useless-escape */
 
+import { FacadeChatSDK } from "../common/facades/FacadeChatSDK";
+import TranscriptHtmlScripts from "../components/footerstateful/downloadtranscriptstateful/interfaces/TranscriptHtmlScripts";
 import { createFileAndDownload } from "../common/utils";
+import defaultLibraryScripts from "../components/footerstateful/downloadtranscriptstateful/common/defaultLibraryScripts";
 
 class TranscriptHTMLBuilder {
     private options: any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -15,6 +18,7 @@ class TranscriptHTMLBuilder {
     private customerAvatarFontColor = "#FFF";
     private disableMarkdownMessageFormatting = false;
     private disableNewLineMarkdownSupport = false;
+    private externalScripts: TranscriptHtmlScripts = {};
 
     constructor(options: any) {  // eslint-disable-line @typescript-eslint/no-explicit-any
         this.options = options;
@@ -66,20 +70,71 @@ class TranscriptHTMLBuilder {
         if (this.options?.disableNewLineMarkdownSupport) {
             this.disableNewLineMarkdownSupport = this.options.disableNewLineMarkdownSupport;
         }
+
+        if (this.options?.externalScripts) {
+            this.externalScripts = this.options.externalScripts;
+        }
     }
 
+    createMetaElement() {
+        const htmlData = `
+            <meta charset="UTF-8">
+        `;
+
+        return htmlData;
+    }
     createTitleElement() {
         const htmlData = `<title> ${this.pageTitle} </title>`;
         return htmlData;
     }
 
+    createScriptElement(src: string, integrity: string | undefined = undefined, crossOrigin: string | undefined = undefined, referrerPolicy: string | undefined = undefined) {
+        return `<script src="${src}" ${integrity ? `integrity="${integrity}"`: ""} ${crossOrigin ? `crossorigin="${crossOrigin}"`: ""} ${referrerPolicy ? `referrerpolicy="${referrerPolicy}"`: ""}><\/script>`;
+    }
+
+    createWebChatScriptElement() {
+        return this.externalScripts?.botframeworkWebChat?.src?
+            this.createScriptElement(this.externalScripts?.botframeworkWebChat?.src as string, this.externalScripts?.botframeworkWebChat?.integrity, this.externalScripts?.botframeworkWebChat?.crossOrigin, this.externalScripts?.botframeworkWebChat?.referrerPolicy):
+            this.createScriptElement(defaultLibraryScripts.botframeworkWebChat.src);
+    }
+
+    createRxJsScriptElement() {
+        return this.externalScripts?.rxJs?.src?
+            this.createScriptElement(this.externalScripts?.rxJs?.src as string, this.externalScripts?.rxJs?.integrity, this.externalScripts?.rxJs?.crossOrigin, this.externalScripts?.rxJs?.referrerPolicy):
+            this.createScriptElement(defaultLibraryScripts.rxJs.src, defaultLibraryScripts.rxJs.integrity, defaultLibraryScripts.rxJs.crossOrigin, defaultLibraryScripts.rxJs.referrerPolicy);
+    }
+
+    createReactScriptElement() {
+        return this.externalScripts?.react?.src?
+            this.createScriptElement(this.externalScripts?.react?.src as string, this.externalScripts?.react?.integrity, this.externalScripts?.react?.crossOrigin, this.externalScripts?.react?.referrerPolicy):
+            this.createScriptElement(defaultLibraryScripts.react.src);
+    }
+
+    createReactDomScriptElement() {
+        return this.externalScripts?.reactDom?.src?
+            this.createScriptElement(this.externalScripts?.reactDom?.src as string, this.externalScripts?.reactDom?.integrity, this.externalScripts?.reactDom?.crossOrigin, this.externalScripts?.reactDom?.referrerPolicy):
+            this.createScriptElement(this.externalScripts?.reactDom?.src ?? defaultLibraryScripts.reactDom.src);
+    }
+
+    createMarkdownItScriptElement() {
+        return this.externalScripts?.markdownIt?.src?
+            this.createScriptElement(this.externalScripts?.markdownIt?.src as string, this.externalScripts?.markdownIt?.integrity, this.externalScripts?.markdownIt?.crossOrigin, this.externalScripts?.markdownIt?.referrerPolicy):
+            this.createScriptElement(defaultLibraryScripts.markdownIt.src, defaultLibraryScripts.markdownIt.integrity, defaultLibraryScripts.markdownIt.crossOrigin);
+    }
+
     createExternalScriptElements() {
+        const webChatScript = this.createWebChatScriptElement();
+        const rxJsScript = this.createRxJsScriptElement();
+        const reactScript = this.createReactScriptElement();
+        const reactDomScript = this.createReactDomScriptElement();
+        const markdownItScript = this.createMarkdownItScriptElement();
+
         const htmlData = `
-            <script src="https://cdn.botframework.com/botframework-webchat/4.15.7/webchat.js"><\/script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/rxjs/7.8.0/rxjs.umd.min.js" integrity="sha512-v0/YVjBcbjLN6scjmmJN+h86koeB7JhY4/2YeyA5l+rTdtKLv0VbDBNJ32rxJpsaW1QGMd1Z16lsLOSGI38Rbg==" crossorigin="anonymous" referrerpolicy="no-referrer"><\/script>
-            <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"><\/script>
-            <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"><\/script>
-            <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js" integrity="sha256-hNyljag6giCsjv/yKmxK8/VeHzvMDvc5u8AzmRvm1BI=" crossorigin="anonymous"><\/script>
+            ${webChatScript}
+            ${rxJsScript}
+            ${reactScript}
+            ${reactDomScript}
+            ${markdownItScript}
         `;
 
         return htmlData;
@@ -88,6 +143,7 @@ class TranscriptHTMLBuilder {
     createHeadElement() {
         const htmlData = `
             <head>
+                ${this.createMetaElement()}
                 ${this.createTitleElement()}
                 ${this.createExternalScriptElements()}
                 <script>
@@ -341,6 +397,90 @@ class TranscriptHTMLBuilder {
                     window.addEventListener("online", () => {
                         document.body.innerHTML = \`${this.networkOnlineMessage} <button onclick="window.location.reload()"> Refresh </button>\`;
                     });
+
+                    document.addEventListener("copy", (event) => {
+                        const clonedSelectedContent = window.getSelection().getRangeAt(0).cloneContents();
+                        const copiedContent = document.createElement("div");
+                        copiedContent.appendChild(clonedSelectedContent);
+        
+                        event.clipboardData.setData("text/plain", getAllText(copiedContent));
+                        event.preventDefault();
+                    });
+
+
+                    getAllText = (element) => {
+                        let plainText = "";
+                        Array.from(element.childNodes).forEach((node) => {
+                            // ignore aria-hidden elements and keyboard help text
+                            const ariaHiddenAttr = node.attributes ? node.attributes.getNamedItem("aria-hidden") : null;
+                            if ((ariaHiddenAttr && ariaHiddenAttr.value === "true") || node.classList && node.classList.contains("webchat__keyboard-help")) {
+                                return;
+                            }
+                         
+                            // get all texts inside activity body, including message, translated message, attachment name, adaptive card content, status footer, etc.
+                            if (node.classList && node.classList.contains("webchat__basic-transcript__activity-body")) {
+                                plainText += this.processTranscriptActivityNode(node);
+                                return;
+                            }
+                            if (node.nodeType === Node.TEXT_NODE) {
+                                plainText += node.textContent + '\\n';
+                            } else {
+                                plainText += this.getAllText(node);
+                            }
+                        });
+                        return plainText;
+                    }
+
+                    processTranscriptActivityNode = (node) => {
+                        const divs = node.getElementsByTagName("div");
+                        let plainText = "";
+                
+                        if (divs && divs.length > 1 && divs[1]) {                           
+                            const messageRow = node.querySelector(".webchat__stacked-layout__message-row[aria-roledescription='message']");
+                            const author = node.querySelector(".message-name");
+                            const attachmentRow = node.querySelector(".webchat__stacked-layout__attachment-row[aria-roledescription='attachment']");
+                        
+                            if (messageRow) {
+                                let message = messageRow.getElementsByClassName("webchat__text-content__markdown");
+                                
+                                if (message.length === 0) {
+                                    message = messageRow.getElementsByClassName("markdown");                                    
+                                }
+
+                                if (message.length > 0) {
+                                    plainText += author.textContent + '\\n' + message[0].textContent + '\\n';
+                                }
+                            }  else if (attachmentRow) {
+                                const attachment = attachmentRow.getElementsByClassName("webchat__fileContent__fileName");
+                                const adaptiveCard = this.getAdaptiveCardContent(attachmentRow.querySelector(".ac-container.ac-adaptiveCard"));
+                               
+                                plainText += attachment && attachment.length > 0 ? author.textContent +'\\n' + attachment[0].textContent +'\\n': author.textContent +'\\n' + adaptiveCard +'\\n';
+                            }
+                
+                            const statusElements = node.getElementsByClassName("webchat__stacked-layout__status");
+                            if (statusElements.length > 0) {
+                                const timestampelement = statusElements[0].querySelector(".message-timestamp");
+                                plainText += timestampelement ? timestampelement.textContent+'\\n\\n' : '\\n';
+                            }
+                        }
+                
+                        return plainText;
+                    }
+
+                    getAdaptiveCardContent = (node) => {
+                        if (!node) {
+                            return undefined;
+                        }
+
+                        let plainText = "";
+                        const rows = node.querySelectorAll(".ac-textBlock p");
+                        rows.forEach((row) => {
+                            plainText += row.textContent+ '\\n';
+                        });
+
+                        return plainText;
+                    }
+
                 <\/script>
                 <div id="transcript"></div>
                 <script>
@@ -538,7 +678,7 @@ class TranscriptHTMLBuilder {
     }
 }
 
-const createChatTranscript = async (transcript: string, chatSDK: any, renderAttachments = false, transcriptOptions: any = {}) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+const createChatTranscript = async (transcript: string, facadeChatSDK: FacadeChatSDK, renderAttachments = false, transcriptOptions: any = {}) => { // eslint-disable-line @typescript-eslint/no-explicit-any
     const transcriptMessages = JSON.parse(transcript);
 
     const convertBlobToBase64 = async (blob: Blob) => {
@@ -562,7 +702,7 @@ const createChatTranscript = async (transcript: string, chatSDK: any, renderAtta
                     type: metadata[0].contentType
                 };
 
-                const blob = await chatSDK.downloadFileAttachment(fileMetadata);
+                const blob = await facadeChatSDK.downloadFileAttachment(fileMetadata);
                 const base64 = await convertBlobToBase64(blob);
                 message.contentUrl = base64;
             }

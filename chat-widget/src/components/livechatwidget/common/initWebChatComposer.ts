@@ -2,7 +2,9 @@ import { ConversationEndEntity, ParticipantType } from "../../../common/Constant
 import { LogLevel, TelemetryEvent } from "../../../common/telemetry/TelemetryConstants";
 import { changeLanguageCodeFormatForWebChat, getConversationDetailsCall } from "../../../common/utils";
 
+import DOMPurify from "dompurify";
 import { Dispatch } from "react";
+import { FacadeChatSDK } from "../../../common/facades/FacadeChatSDK";
 import HyperlinkTextOverrideRenderer from "../../webchatcontainerstateful/webchatcontroller/markdownrenderers/HyperlinkTextOverrideRenderer";
 import { IDataMaskingInfo } from "../../webchatcontainerstateful/interfaces/IDataMaskingInfo";
 import { ILiveChatWidgetAction } from "../../../contexts/common/ILiveChatWidgetAction";
@@ -15,7 +17,7 @@ import { WebChatStoreLoader } from "../../webchatcontainerstateful/webchatcontro
 import attachmentProcessingMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/attachmentProcessingMiddleware";
 import channelDataMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/channelDataMiddleware";
 import { createActivityMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/activityMiddleware";
-import createAttachmentMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/attachmentMiddleware";
+import { createAttachmentMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/attachmentMiddleware";
 import createAttachmentUploadValidatorMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/attachmentUploadValidatorMiddleware";
 import { createAvatarMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/avatarMiddleware";
 import { createCardActionMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/cardActionMiddleware";
@@ -23,8 +25,10 @@ import createConversationEndMiddleware from "../../webchatcontainerstateful/webc
 import createDataMaskingMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/dataMaskingMiddleware";
 import { createMarkdown } from "./createMarkdown";
 import createMaxMessageSizeValidator from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/maxMessageSizeValidator";
-import createMessageTimeStampMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/messageTimestampMiddleware";
+import { createMessageSequenceIdOverrideMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/messageSequenceIdOverrideMiddleware";
+import { createMessageTimeStampMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/messageTimestampMiddleware";
 import { createStore } from "botframework-webchat";
+import { createToastMiddleware } from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/toastMiddleware";
 import { createWebChatTelemetry } from "../../webchatcontainerstateful/webchatcontroller/webchattelemetry/WebChatLogger";
 import { defaultAttachmentProps } from "../../webchatcontainerstateful/common/defaultProps/defaultAttachmentProps";
 import { defaultMiddlewareLocalizedTexts } from "../../webchatcontainerstateful/common/defaultProps/defaultMiddlewareLocalizedTexts";
@@ -35,12 +39,9 @@ import htmlPlayerMiddleware from "../../webchatcontainerstateful/webchatcontroll
 import htmlTextMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/htmlTextMiddleware";
 import preProcessingMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/preProcessingMiddleware";
 import sanitizationMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/storemiddlewares/sanitizationMiddleware";
-import DOMPurify from "dompurify";
-import createMessageSequenceIdOverrideMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/messageSequenceIdOverrideMiddleware";
-import createToastMiddleware from "../../webchatcontainerstateful/webchatcontroller/middlewares/renderingmiddlewares/toastMiddleware";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const initWebChatComposer = (props: ILiveChatWidgetProps, state: ILiveChatWidgetContext, dispatch: Dispatch<ILiveChatWidgetAction>, chatSDK: any, endChat: any) => {
+export const initWebChatComposer = (props: ILiveChatWidgetProps, state: ILiveChatWidgetContext, dispatch: Dispatch<ILiveChatWidgetAction>, facadeChatSDK: FacadeChatSDK, endChat: any) => {
     // Add a hook to make all links open a new window
     postDomPurifyActivities();
     const localizedTexts = {
@@ -49,9 +50,11 @@ export const initWebChatComposer = (props: ILiveChatWidgetProps, state: ILiveCha
     };
 
     const hyperlinkTextOverride = props.webChatContainerProps?.hyperlinkTextOverride ?? defaultWebChatContainerStatefulProps.hyperlinkTextOverride;
+    
     const disableNewLineMarkdownSupport = props.webChatContainerProps?.disableNewLineMarkdownSupport ?? defaultWebChatContainerStatefulProps.disableNewLineMarkdownSupport;
+    const disableMarkdownMessageFormatting = props.webChatContainerProps?.disableMarkdownMessageFormatting ?? defaultWebChatContainerStatefulProps.disableMarkdownMessageFormatting;
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const markdown = createMarkdown((props.webChatContainerProps?.disableMarkdownMessageFormatting ?? defaultWebChatContainerStatefulProps.disableMarkdownMessageFormatting)!, disableNewLineMarkdownSupport!);
+    const markdown = createMarkdown(disableMarkdownMessageFormatting!, disableNewLineMarkdownSupport!);
     // Initialize Web Chat's redux store
     let webChatStore = WebChatStoreLoader.store;
 
@@ -59,21 +62,24 @@ export const initWebChatComposer = (props: ILiveChatWidgetProps, state: ILiveCha
 
         const conversationEndCallback = async () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const conversationDetails: any = await getConversationDetailsCall(chatSDK);
+            const conversationDetails: any = await getConversationDetailsCall(facadeChatSDK);
             if (conversationDetails?.participantType === ParticipantType.Bot) {
+                TelemetryHelper.logActionEvent(LogLevel.INFO, {
+                    Event: TelemetryEvent.ConversationEndedThreadEventReceived,
+                    Description: "Conversation end by bot or timeout event received."
+                });
                 dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_ENDED_BY, payload: ConversationEndEntity.Bot });
             } else {
+                TelemetryHelper.logActionEvent(LogLevel.INFO, {
+                    Event: TelemetryEvent.ConversationEndedThreadEventReceived,
+                    Description: "Conversation end by agent or timeout event received."
+                });
                 dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_ENDED_BY, payload: ConversationEndEntity.Agent });
             }
 
             if (conversationDetails?.participantType === ParticipantType.Bot || conversationDetails?.participantType === ParticipantType.User) {
                 dispatch({ type: LiveChatWidgetActionType.SET_POST_CHAT_PARTICIPANT_TYPE, payload: conversationDetails?.participantType });
             }
-
-            TelemetryHelper.logActionEvent(LogLevel.INFO, {
-                Event: TelemetryEvent.ConversationEndedThreadEventReceived,
-                Description: "Conversation end by agent side or by timeout event received."
-            });
         };
 
         webChatStore = createStore(
@@ -104,17 +110,23 @@ export const initWebChatComposer = (props: ILiveChatWidgetProps, state: ILiveCha
     const hyperlinkTextOverrideRenderer = new HyperlinkTextOverrideRenderer(hyperlinkTextOverride as boolean);
     const markdownRenderers = [hyperlinkTextOverrideRenderer];
     const renderMarkdown = (text: string): string => {
+
         if (props.webChatContainerProps?.webChatProps?.renderMarkdown) {
             text = props.webChatContainerProps?.webChatProps.renderMarkdown(text);
         } else {
-            const render = disableNewLineMarkdownSupport ? markdown.renderInline.bind(markdown) : markdown.render.bind(markdown);
+            const render = disableMarkdownMessageFormatting ? markdown.renderInline.bind(markdown) : markdown.render.bind(markdown);
             text = render(text);
         }
 
         markdownRenderers.forEach((renderer) => {
             text = renderer.render(text);
         });
-        text = DOMPurify.sanitize(text);
+
+        const config = {
+            FORBID_TAGS: ["form", "button", "script", "div", "input"],
+            FORBID_ATTR: ["action"]
+        };
+        text = DOMPurify.sanitize(text, config);
         return text;
     };
 
@@ -130,7 +142,7 @@ export const initWebChatComposer = (props: ILiveChatWidgetProps, state: ILiveCha
         dir: state.domainStates.globalDir,
         locale: changeLanguageCodeFormatForWebChat(getLocaleStringFromId(state.domainStates.liveChatConfig?.ChatWidgetLanguage?.msdyn_localeid)),
         store: webChatStore,
-        activityMiddleware: props.webChatContainerProps?.renderingMiddlewareProps?.disableActivityMiddleware ? undefined : createActivityMiddleware(state.domainStates.renderingMiddlewareProps?.systemMessageStyleProps, state.domainStates.renderingMiddlewareProps?.userMessageStyleProps),
+        activityMiddleware: props.webChatContainerProps?.renderingMiddlewareProps?.disableActivityMiddleware ? undefined : createActivityMiddleware(renderMarkdown, state.domainStates.renderingMiddlewareProps?.systemMessageStyleProps, state.domainStates.renderingMiddlewareProps?.userMessageStyleProps),
         attachmentMiddleware: props.webChatContainerProps?.renderingMiddlewareProps?.disableAttachmentMiddleware ? undefined : createAttachmentMiddleware(state.domainStates.renderingMiddlewareProps?.attachmentProps?.enableInlinePlaying ?? defaultAttachmentProps.enableInlinePlaying),
         activityStatusMiddleware: props.webChatContainerProps?.renderingMiddlewareProps?.disableActivityStatusMiddleware ? undefined : defaultWebChatContainerStatefulProps.webChatProps?.activityStatusMiddleware,
         toastMiddleware: props.webChatContainerProps?.renderingMiddlewareProps?.disableToastMiddleware ? undefined: createToastMiddleware(props.notificationPaneProps, endChat),

@@ -52,6 +52,12 @@ export enum LiveChatWidgetActionType {
 
     /*
         Parameters:
+        - string: The start chat failure type
+    */
+    SET_START_CHAT_FAILURE_TYPE,
+
+    /*
+        Parameters:
         - true: When chat is outside operating hours
         - false: When chat is not outside operatin hours
     */
@@ -272,5 +278,11 @@ export enum LiveChatWidgetActionType {
         Parameters:
         ParticipantType: Set participant type when rendering post chat survey
     */
-    SET_POST_CHAT_PARTICIPANT_TYPE
+    SET_POST_CHAT_PARTICIPANT_TYPE,
+
+    /*
+        Parameters:
+        null payload, simply returns the existing inMemory state
+    */
+    GET_IN_MEMORY_STATE,
 }

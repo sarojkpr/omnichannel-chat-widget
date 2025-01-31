@@ -5,6 +5,7 @@ import { defaultMiddlewareLocalizedTexts } from "../../components/webchatcontain
 import { getWidgetCacheIdfromProps, isNullOrUndefined } from "../../common/utils";
 import { defaultClientDataStoreProvider } from "../../common/storage/default/defaultClientDataStoreProvider";
 import { ConfirmationState, Constants, ConversationEndEntity, StorageType } from "../../common/Constants";
+import { StartChatFailureType } from "./StartChatFailureType";
 
 export const getLiveChatWidgetContextInitialState = (props: ILiveChatWidgetProps) => {
 
@@ -15,6 +16,16 @@ export const getLiveChatWidgetContextInitialState = (props: ILiveChatWidgetProps
 
     if (!isNullOrUndefined(initialState)) {
         const initialStateFromCache: ILiveChatWidgetContext = JSON.parse(initialState);
+
+        /*
+        * this step is needed to avoid the pre-chat pane to be injected in the DOM when the widget is reloaded, because wont be visible
+        * and it will be blocking all elements behind it
+        * as part of the flow, the pre-chat will be detected and then it will be displayed properly 
+        * this case is only and only for pre-chat pane.
+        * **/
+        if (initialStateFromCache.appStates.conversationState === ConversationState.Prechat) {
+            initialStateFromCache.appStates.conversationState = ConversationState.Closed;
+        }
         return initialStateFromCache;
     }
 
@@ -36,7 +47,8 @@ export const getLiveChatWidgetContextInitialState = (props: ILiveChatWidgetProps
             initialChatSdkRequestId: "",
             transcriptRequestId: "",
             confirmationPaneConfirmedOptionClicked: false,
-            confirmationState: ConfirmationState.NotSet
+            confirmationState: ConfirmationState.NotSet,
+            startChatFailureType: StartChatFailureType.Generic
         },
         appStates: {
             conversationState: ConversationState.Closed,
@@ -63,6 +75,7 @@ export const getLiveChatWidgetContextInitialState = (props: ILiveChatWidgetProps
         },
         uiStates: {
             showConfirmationPane: false,
+            showStartChatErrorPane: false,
             showEmailTranscriptPane: false,
             showCallingPopup: false,
             isIncomingCall: true,

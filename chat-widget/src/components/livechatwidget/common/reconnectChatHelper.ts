@@ -1,44 +1,45 @@
 import "regenerator-runtime/runtime";
 
 import { BroadcastEvent, LogLevel, TelemetryEvent } from "../../../common/telemetry/TelemetryConstants";
+import { ConversationMode, WidgetLoadCustomErrorString } from "../../../common/Constants";
 import { checkContactIdError, isNullOrEmptyString, isNullOrUndefined } from "../../../common/utils";
 import { handleAuthentication, removeAuthTokenProvider } from "./authHelper";
 
 import { BroadcastService } from "@microsoft/omnichannel-chat-components";
 import ChatConfig from "@microsoft/omnichannel-chat-sdk/lib/core/ChatConfig";
-import { ConversationMode } from "../../../common/Constants";
 import { ConversationState } from "../../../contexts/common/ConversationState";
 import { Dispatch } from "react";
+import { FacadeChatSDK } from "../../../common/facades/FacadeChatSDK";
 import { ICustomEvent } from "@microsoft/omnichannel-chat-components/lib/types/interfaces/ICustomEvent";
 import { ILiveChatWidgetAction } from "../../../contexts/common/ILiveChatWidgetAction";
 import { ILiveChatWidgetContext } from "../../../contexts/common/ILiveChatWidgetContext";
+import { ILiveChatWidgetProps } from "../interfaces/ILiveChatWidgetProps";
 import { IReconnectChatContext } from "../../reconnectchatpanestateful/interfaces/IReconnectChatContext";
 import { IReconnectChatOptionalParams } from "../../reconnectchatpanestateful/interfaces/IReconnectChatOptionalParams";
 import { LiveChatWidgetActionType } from "../../../contexts/common/LiveChatWidgetActionType";
 import StartChatOptionalParams from "@microsoft/omnichannel-chat-sdk/lib/core/StartChatOptionalParams";
 import { TelemetryHelper } from "../../../common/telemetry/TelemetryHelper";
+import { handleStartChatError } from "./startChatErrorHandler";
 
 // Return value: should start normal chat flow when reconnect is enabled
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const handleChatReconnect = async (chatSDK: any, props: any, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, initStartChat: any, state: ILiveChatWidgetContext): Promise<boolean> => {
-    if (!isReconnectEnabled(props.chatConfig) || isPersistentEnabled(props.chatConfig)) return false;
-
+const handleChatReconnect = async (facadeChatSDK: FacadeChatSDK, props: ILiveChatWidgetProps, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, initStartChat: any, state: ILiveChatWidgetContext): Promise<boolean> => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isAuthenticatedChat = (props.chatConfig?.LiveChatConfigAuthSettings as any)?.msdyn_javascriptclientfunction ? true : false;
-
     // Get chat reconnect context
-    const reconnectChatContext: IReconnectChatContext = await getChatReconnectContext(chatSDK, props.chatConfig, props, isAuthenticatedChat);
+    const reconnectChatContext: IReconnectChatContext = await getChatReconnectContext(facadeChatSDK, props.chatConfig as ChatConfig, props, isAuthenticatedChat, dispatch) ?? {} as IReconnectChatContext;
 
-    //Redirect if enabled
+    // Redirect if enabled
     if (reconnectChatContext?.redirectURL) {
-        redirectPage(reconnectChatContext.redirectURL, props.reconnectChatPaneProps?.redirectInSameWindow);
+        redirectPage(reconnectChatContext.redirectURL, props.reconnectChatPaneProps?.redirectInSameWindow as boolean);
         return false;
     }
 
     if (hasReconnectId(reconnectChatContext)) {
-        //if reconnect id is provided in props, don't show reconnect pane
-        if (props.reconnectChatPaneProps?.reconnectId && !isNullOrEmptyString(props.reconnectChatPaneProps?.reconnectId)) {
-            await setReconnectIdAndStartChat(isAuthenticatedChat, chatSDK, state, props, dispatch, setAdapter, reconnectChatContext.reconnectId ?? "", initStartChat);
+        //if reconnect id is provided in props, or hideReconnectChatPane is true, don't show reconnect pane
+        if (props.reconnectChatPaneProps?.reconnectId && !isNullOrEmptyString(props.reconnectChatPaneProps?.reconnectId) ||
+            props.controlProps?.hideReconnectChatPane) {
+            await setReconnectIdAndStartChat(isAuthenticatedChat, facadeChatSDK, state, props, dispatch, setAdapter, reconnectChatContext.reconnectId ?? "", initStartChat);
             return false;
         }
 
@@ -55,7 +56,7 @@ const handleChatReconnect = async (chatSDK: any, props: any, dispatch: Dispatch<
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const getChatReconnectContext = async (chatSDK: any, chatConfig: ChatConfig, props: any, isAuthenticatedChat: boolean) => {
+const getChatReconnectContext = async (facadeChatSDK: FacadeChatSDK, chatConfig: ChatConfig, props: any, isAuthenticatedChat: boolean, dispatch: Dispatch<ILiveChatWidgetAction>) => {
     try {
         TelemetryHelper.logSDKEvent(LogLevel.INFO, {
             Event: TelemetryEvent.GetChatReconnectContextSDKCallStarted,
@@ -67,17 +68,20 @@ const getChatReconnectContext = async (chatSDK: any, chatConfig: ChatConfig, pro
         };
         // Get auth token for getting chat reconnect context
         if (isAuthenticatedChat) {
-            await handleAuthentication(chatSDK, chatConfig, props.getAuthToken);
+            // handle authentication will throw error if auth token is not available, so no need to check for response
+            await handleAuthentication(facadeChatSDK.getChatSDK(), chatConfig, props.getAuthToken);
         }
-        const reconnectChatContext = await chatSDK?.getChatReconnectContext(chatReconnectOptionalParams);
+
+        const reconnectChatContext = await facadeChatSDK?.getChatReconnectContext(chatReconnectOptionalParams);
         if (isAuthenticatedChat) {
             // remove auth token after reconnectId is fetched
             // AuthToken will be reset later at start chat
-            removeAuthTokenProvider(chatSDK);
+            removeAuthTokenProvider(facadeChatSDK.getChatSDK());
         }
         return reconnectChatContext;
     }
-    catch (error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch (error : any ) {
         checkContactIdError(error);
         TelemetryHelper.logSDKEvent(LogLevel.ERROR, {
             Event: TelemetryEvent.GetChatReconnectContextSDKCallFailed,
@@ -85,11 +89,17 @@ const getChatReconnectContext = async (chatSDK: any, chatConfig: ChatConfig, pro
                 exception: error
             }
         });
+
+        // when auth token is not available, propagate the error to stop the execution and ensure error pane is loaded
+        if (error?.message == WidgetLoadCustomErrorString.AuthenticationFailedErrorString){
+            handleStartChatError(dispatch, facadeChatSDK, props, new Error(WidgetLoadCustomErrorString.AuthenticationFailedErrorString), false);
+            throw error;
+        }
     }
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const setReconnectIdAndStartChat = async (isAuthenticatedChat: boolean, chatSDK: any, state: ILiveChatWidgetContext, props: any, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, reconnectId: string, initStartChat: any) => {
+const setReconnectIdAndStartChat = async (isAuthenticatedChat: boolean, facadeChatSDK: FacadeChatSDK, state: ILiveChatWidgetContext, props: any, dispatch: Dispatch<ILiveChatWidgetAction>, setAdapter: any, reconnectId: string, initStartChat: any) => {
     if (!isAuthenticatedChat) {
         const startUnauthenticatedReconnectChat: ICustomEvent = {
             eventName: BroadcastEvent.StartUnauthenticatedReconnectChat,
@@ -100,8 +110,8 @@ const setReconnectIdAndStartChat = async (isAuthenticatedChat: boolean, chatSDK:
 
     dispatch({ type: LiveChatWidgetActionType.SET_RECONNECT_ID, payload: reconnectId });
     dispatch({ type: LiveChatWidgetActionType.SET_CONVERSATION_STATE, payload: ConversationState.Loading });
-
-    await initStartChat(chatSDK, dispatch, setAdapter, state, props, optionalParams);
+    
+    await initStartChat(facadeChatSDK, dispatch, setAdapter, state, props, optionalParams);
 };
 
 const redirectPage = (redirectURL: string, redirectInSameWindow: boolean) => {

@@ -39,6 +39,7 @@ export interface OCChatSDKTelemetryData extends BaseTelemetryData {
     ElapsedTimeInMilliseconds?: number;
     TransactionId: string;
     ExceptionDetails?: object;
+    Description?: string;
 }
 
 export interface IC3ClientTelemetryData extends BaseTelemetryData {
@@ -92,6 +93,13 @@ export interface ActionTelemetryData extends BaseTelemetryData {
 
 export interface CallingTelemetryData extends BaseTelemetryData {
     CallId?: string;
+    Event?: string;
+    ElapsedTimeInMilliseconds?: number;
+    ExceptionDetails?: object;
+    Description?: string;
+}
+
+export interface FacadeChatSDKTelemetryData extends BaseTelemetryData {
     Event?: string;
     ElapsedTimeInMilliseconds?: number;
     ExceptionDetails?: object;

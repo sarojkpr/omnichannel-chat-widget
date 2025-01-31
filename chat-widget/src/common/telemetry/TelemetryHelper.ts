@@ -1,5 +1,5 @@
 import { ACSAdapterContract, ActionsContract, BaseContract, CallingContract, ConfigValidationContract, IC3ClientContract, LoadContract, OCChatSDKContract, TelemetryContract, WebChatContract } from "./definitions/Contracts";
-import { ACSAdapterTelemetryData, ActionTelemetryData, CallingTelemetryData, ConfigValidationTelemetryData, IC3ClientTelemetryData, LoadTelemetryData, OCChatSDKTelemetryData, TelemetryData, WebChatTelemetryData } from "./definitions/Payload";
+import { ACSAdapterTelemetryData, ActionTelemetryData, CallingTelemetryData, ConfigValidationTelemetryData, FacadeChatSDKTelemetryData, IC3ClientTelemetryData, LoadTelemetryData, OCChatSDKTelemetryData, TelemetryData, WebChatTelemetryData } from "./definitions/Payload";
 import { LogLevel, ScenarioType, TelemetryEvent, TelemetryInput } from "./TelemetryConstants";
 
 import { BroadcastService } from "@microsoft/omnichannel-chat-components";
@@ -31,7 +31,8 @@ export class TelemetryHelper {
             case ScenarioType.LOAD: return TelemetryHelper.conformToLoadContract(level, input);
             case ScenarioType.IC3_CLIENT: return TelemetryHelper.conformToIC3ClientContract(level, input);
             case ScenarioType.WEBCHAT: return TelemetryHelper.conformToWebChatContract(level, input);
-            case ScenarioType.OCCHATSDK: return TelemetryHelper.conformToOCChatSDKContract(level, input);
+            case ScenarioType.OCCHATSDK:
+            case ScenarioType.SDK: return TelemetryHelper.conformToOCChatSDKContract(level, input);
             case ScenarioType.ACTIONS: return TelemetryHelper.conformToActionsContract(level, input);
             case ScenarioType.CALLING: return TelemetryHelper.conformToCallingContract(level, input);
             case ScenarioType.ACS_ADAPTER: return TelemetryHelper.conformToACSAdapterContract(level, input);
@@ -53,7 +54,10 @@ export class TelemetryHelper {
             OrganizationUrl: TelemetryManager.InternalTelemetryData?.orgUrl ?? "",
             LCWRuntimeId: TelemetryManager.InternalTelemetryData?.lcwRuntimeId ?? "",
             CurrentRequestId: TelemetryManager.InternalTelemetryData?.currentRequestId ?? "",
-            LogLevel: level
+            LogLevel: level,
+            OCChatSDKVersion: TelemetryManager.InternalTelemetryData?.OCChatSDKVersion ?? "",
+            OCChatWidgetVersion: TelemetryManager.InternalTelemetryData?.chatWidgetVersion ?? "",
+            OCChatComponentsVersion: TelemetryManager.InternalTelemetryData?.chatComponentVersion ?? ""
         };
     }
 
@@ -130,9 +134,6 @@ export class TelemetryHelper {
                 event.ChatType = payload.ChatType;
                 event.ElapsedTimeInMilliseconds = payload.ElapsedTimeInMilliseconds;
                 event.ExceptionDetails = JSON.stringify(payload.ExceptionDetails);
-                event.OCChatSDKVersion = TelemetryManager.InternalTelemetryData?.OCChatSDKVersion ?? "";
-                event.OCChatWidgetVersion = TelemetryManager.InternalTelemetryData?.chatWidgetVersion ?? "";
-                event.OCChatComponentsVersion = TelemetryManager.InternalTelemetryData?.chatComponentVersion ?? "";
             });
     }
 
@@ -191,6 +192,7 @@ export class TelemetryHelper {
                 event.TransactionId = payload.TransactionId;
                 event.ElapsedTimeInMilliseconds = payload.ElapsedTimeInMilliseconds;
                 event.ExceptionDetails = JSON.stringify(payload.ExceptionDetails);
+                event.Description = payload.Description;
             });
     }
 
@@ -305,6 +307,17 @@ export class TelemetryHelper {
                 type: TelemetryEvent.WebChatEvent,
                 scenarioType: ScenarioType.WEBCHAT
             } as WebChatTelemetryData
+        };
+        BroadcastService.postMessage(telemetryEvent);
+    }
+
+    public static logFacadeChatSDKEvent = (logLevel: LogLevel, payload: TelemetryEventWrapper) => {
+        const telemetryEvent: ITelemetryEvent = {
+            eventName: payload?.Event ?? TelemetryEvent.FacadeChatSDKEvent,
+            logLevel: logLevel,
+            payload: {
+                ...payload
+            } as FacadeChatSDKTelemetryData
         };
         BroadcastService.postMessage(telemetryEvent);
     }

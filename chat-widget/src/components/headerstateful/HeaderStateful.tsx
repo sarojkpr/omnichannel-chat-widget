@@ -35,6 +35,7 @@ export const HeaderStateful = (props: IHeaderStatefulParams) => {
         onMinimizeClick: () => {
             TelemetryHelper.logActionEvent(LogLevel.INFO, { Event: TelemetryEvent.HeaderMinimizeButtonClicked, Description: "Header Minimize button clicked." });
             dispatch({ type: LiveChatWidgetActionType.SET_MINIMIZED, payload: true });
+            dispatch({ type: LiveChatWidgetActionType.SET_UNREAD_MESSAGE_COUNT, payload: 0 });
         },
         onCloseClick: async () => {
             TelemetryHelper.logActionEvent(LogLevel.INFO, { Event: TelemetryEvent.HeaderCloseButtonClicked, Description: "Header Close button clicked." });
@@ -66,6 +67,7 @@ export const HeaderStateful = (props: IHeaderStatefulParams) => {
             text: "We're Offline"
         },
         onMinimizeClick: () => {
+            TelemetryHelper.logActionEvent(LogLevel.INFO, { Event: TelemetryEvent.HeaderMinimizeButtonClicked, Description: "Header Minimize button clicked." });
             dispatch({ type: LiveChatWidgetActionType.SET_MINIMIZED, payload: true });
         },
         ...outOfOfficeHeaderProps?.controlProps,

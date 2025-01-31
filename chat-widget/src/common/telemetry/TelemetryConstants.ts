@@ -56,7 +56,9 @@ export enum BroadcastEvent {
     HideChatVisibilityChangeEvent = "hideChatVisibilityChangeEvent",
     UpdateSessionDataForTelemetry = "UpdateSessionDataForTelemetry",
     UpdateConversationDataForTelemetry = "UpdateConversationDataForTelemetry",
-    ContactIdNotFound = "ContactIdNotFound"
+    ContactIdNotFound = "ContactIdNotFound",
+    SyncMinimize = "SyncMinimize",
+    OnWidgetError = "OnWidgetError"
 }
 
 // Events being logged
@@ -93,6 +95,7 @@ export enum TelemetryEvent {
     GetConversationDetailsCallStarted = "GetConversationDetailsCallStarted",
     GetConversationDetailsCallFailed = "GetConversationDetailsCallFailed",
     EndChatSDKCallFailed = "EndChatSDKCallFailed",
+    DisconnectEndChatSDKCallFailed = "DisconnectEndChatSDKCallFailed",
     GetChatReconnectContextSDKCallStarted = "GetChatReconnectContextSDKCallStarted",
     GetChatReconnectContextSDKCallFailed = "GetChatReconnectContextSDKCallFailed",
     ParseAdaptiveCardFailed = "ParseAdaptiveCardFailed",
@@ -112,10 +115,12 @@ export enum TelemetryEvent {
     CloseChatCall = "CloseChatCall",
     CloseChatMethodException = "CloseChatMethodException",
     PrechatSurveyLoaded = "PrechatSurveyLoaded",
+    PrechatSurveyExpected = "PrechatSurveyExpected",
     PrechatSubmitted = "PrechatSubmitted",
     StartChatSDKCall = "StartChatCall",
     StartChatEventRecevied = "StartChatEventReceived",
     EndChatSDKCall = "EndChatSDKCall",
+    PrepareEndChat = "PrepareEndChat",
     EndChatEventReceived = "EndChatEventReceived",
     WindowClosed = "WindowClosed",
     OnNewMessageFailed = "OnNewMessageFailed",
@@ -126,10 +131,10 @@ export enum TelemetryEvent {
     ErrorUIPaneLoaded = "ErrorUIPaneLoaded",
     DownloadTranscriptFailed = "DownloadTranscriptFailed",
     StartChatFailed = "StartChatFailed",
-    IC3ThreadUpdateEventReceived = "IC3ThreadUpdateEventReceived",
     ConfirmationCancelButtonClicked = "ConfirmationCancelButtonClicked",
     ConfirmationConfirmButtonClicked = "ConfirmationConfirmButtonClicked",
     LoadingPaneLoaded = "LoadingPaneLoaded",
+    StartChatErrorPaneLoaded = "StartChatErrorPaneLoaded",
     EmailTranscriptLoaded = "EmailTranscriptLoaded",
     OutOfOfficePaneLoaded = "OutOfOfficePaneLoaded",
     ConfirmationPaneLoaded = "ConfirmationPaneLoaded",
@@ -179,6 +184,7 @@ export enum TelemetryEvent {
     SendTypingIndicatorSucceeded = "SendTypingIndicatorSucceeded",
     SendTypingIndicatorFailed = "SendTypingIndicatorFailed",
     WebChatEvent = "WebChatEvent",
+    FacadeChatSDKEvent = "FacadeChatSDKEvent",
 
     PreChatSurveyStartChatMethodFailed = "PreChatSurveyStartChatMethodFailed",
     ChatAlreadyTriggered = "ChatAlreadyTriggered",
@@ -215,7 +221,16 @@ export enum TelemetryEvent {
     PostChatSurveyLoaded = "PostChatSurveyLoaded",
 
     // Chat disconnected
-    ChatDisconnectThreadEventReceived = "ChatDisconnectThreadEventReceived"
+    ChatDisconnectThreadEventReceived = "ChatDisconnectThreadEventReceived",
+
+    HiddenAdaptiveCardMessageReceived = "HiddenAdaptiveCardMessageReceived",
+    EndingAdapterAfterDisconnectionError = "EndingAdapterAfterDisconnectionError",
+
+    //FacadeChatSDK events
+    NewTokenSuccess = "NewTokenSuccess",
+    NewTokenFailed = "NewTokenFailed",
+    NewTokenExpired = "NewTokenExpired",
+    TokenEmptyOrSame = "TokenEmptyOrSame"
 }
 
 export interface TelemetryInput {
@@ -264,7 +279,6 @@ export class TelemetryConstants {
             case TelemetryEvent.EmailTranscriptSent:
             case TelemetryEvent.EmailTranscriptFailed:
             case TelemetryEvent.DownloadTranscriptFailed:
-            case TelemetryEvent.IC3ThreadUpdateEventReceived:
             case TelemetryEvent.ConfirmationCancelButtonClicked:
             case TelemetryEvent.ConfirmationConfirmButtonClicked:
             case TelemetryEvent.PreChatSurveyStartChatMethodFailed:
@@ -306,6 +320,7 @@ export class TelemetryConstants {
             case TelemetryEvent.PostChatContextCallFailed:
             case TelemetryEvent.PostChatContextCallSucceed:
             case TelemetryEvent.GetConversationDetailsException:
+            case TelemetryEvent.PrepareEndChat:
                 return ScenarioType.SDK;
 
             case TelemetryEvent.VideoCallAcceptButtonClick:

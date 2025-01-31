@@ -12,7 +12,6 @@ import { LogLevel, TelemetryEvent } from "../../../../../common/telemetry/Teleme
 import { Constants } from "../../../../../common/Constants";
 import { DirectLineActivityType } from "../../enums/DirectLineActivityType";
 import { DirectLineSenderRole } from "../../enums/DirectLineSenderRole";
-import { MessageTypes } from "../../enums/MessageType";
 import React from "react";
 import { TelemetryHelper } from "../../../../../common/telemetry/TelemetryHelper";
 import { defaultSystemMessageStyles } from "./defaultStyles/defaultSystemMessageStyles";
@@ -20,9 +19,8 @@ import { defaultUserMessageStyles } from "./defaultStyles/defaultUserMessageStyl
 import { escapeHtml } from "../../../../../common/utils";
 
 const loggedSystemMessages = new Array<string>();
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const handleSystemMessage = (next: any, args: any[], card: any, systemMessageStyleProps?: React.CSSProperties) => {
+const handleSystemMessage = (next: any, args: any[], card: any, renderMarkdown: (text: string) => string, systemMessageStyleProps?: React.CSSProperties) => {
     const systemMessageStyles = { ...defaultSystemMessageStyles, ...systemMessageStyleProps };
 
     if (card.activity?.channelData?.tags?.includes(Constants.averageWaitTimeMessageTag) && loggedSystemMessages.indexOf(card.activity?.channelData?.clientmessageid) < 0) {
@@ -46,9 +44,10 @@ const handleSystemMessage = (next: any, args: any[], card: any, systemMessageSty
         return () => false;
     }
 
+    card.activity.text = renderMarkdown(card.activity.text);
     // eslint-disable-next-line react/display-name
     return () => (
-        <div key={card.activity.id} style={systemMessageStyles} aria-hidden="true" dangerouslySetInnerHTML={{ __html: escapeHtml(card.activity.text)}}/>
+        <div key={card.activity.id} style={systemMessageStyles} aria-hidden="false" className={Constants.markDownSystemMessageClass} dangerouslySetInnerHTML={{ __html: card.activity.text }} />
     );
 };
 
@@ -68,16 +67,10 @@ const isDataTagsPresent = (card: any) => {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const createActivityMiddleware = (systemMessageStyleProps?: React.CSSProperties, userMessageStyleProps?: React.CSSProperties) => () => (next: any) => (...args: any) => {
+export const createActivityMiddleware = (renderMarkdown: (text: string) => string, systemMessageStyleProps?: React.CSSProperties, userMessageStyleProps?: React.CSSProperties) => () => (next: any) => (...args: any) => {
     const [card] = args;
     if (card.activity) {
         if (card.activity.from?.role === DirectLineSenderRole.Channel) {
-            if (card.activity.channelData?.type === MessageTypes.Thread) {
-                TelemetryHelper.logActionEvent(LogLevel.INFO, {
-                    Event: TelemetryEvent.IC3ThreadUpdateEventReceived,
-                    Description: "IC3 ThreadUpdateEvent Received"
-                });
-            }
             return () => false;
         }
 
@@ -86,10 +79,12 @@ export const createActivityMiddleware = (systemMessageStyleProps?: React.CSSProp
         }
 
         if (isTagIncluded(card, Constants.systemMessageTag)) {
-            return handleSystemMessage(next, args, card, systemMessageStyleProps);
-        } else if (card.activity.text
-            && card.activity.type === DirectLineActivityType.Message
-        ) {
+            return handleSystemMessage(next, args, card, renderMarkdown, systemMessageStyleProps);
+        } 
+        
+        if (card.activity.text
+            && card.activity.type === DirectLineActivityType.Message) {
+
             if (!card.activity.channelData.isHtmlEncoded && card.activity.channelId === Constants.webchatChannelId) {
                 card.activity.text = escapeHtml(card.activity.text);
                 card.activity.channelData.isHtmlEncoded = true;
@@ -100,7 +95,7 @@ export const createActivityMiddleware = (systemMessageStyleProps?: React.CSSProp
             return (...renderArgs: any) => (
                 <div
                     className={card.activity.from.role === DirectLineSenderRole.User ? Constants.sentMessageClassName : Constants.receivedMessageClassName}
-                    style={userMessageStyles} aria-hidden="true">
+                    style={userMessageStyles}>
                     {next(...args)(...renderArgs)}
                 </div>
             );

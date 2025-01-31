@@ -1,8 +1,10 @@
-import { AriaTelemetryConstants, ChatSDKError, Constants, HtmlAttributeNames, LocaleConstants } from "./Constants";
+import { AriaTelemetryConstants, Constants, HtmlAttributeNames, LocaleConstants } from "./Constants";
 import { BroadcastEvent, LogLevel, TelemetryEvent } from "./telemetry/TelemetryConstants";
 
 import { BroadcastService } from "@microsoft/omnichannel-chat-components";
+import { ChatSDKErrorName } from "@microsoft/omnichannel-chat-sdk";
 import { DataStoreManager } from "./contextDataStore/DataStoreManager";
+import { FacadeChatSDK } from "./facades/FacadeChatSDK";
 import { ICustomEvent } from "@microsoft/omnichannel-chat-components/lib/types/interfaces/ICustomEvent";
 import { ITimer } from "./interfaces/ITimer";
 import { KeyCodes } from "./KeyCodes";
@@ -370,17 +372,29 @@ export const debounceLeading = (fn: any, ms = 3000) => {
         timeoutId = setTimeout(() => { timeoutId = null; }, ms);
     };
 };
+export const isThisSessionPopout = (href: string): boolean => {
 
+    if (href?.includes("open-in-window=true") && !window?.location?.href?.includes("is-popout-mode=true")) {
+        return true;
+    }
+
+    return false;
+};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const getConversationDetailsCall = async (chatSDK: any) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let conversationDetails: any = undefined;
+export const getConversationDetailsCall = async (facadeChatSDK: FacadeChatSDK, liveChatContext: any = null) => {
+    let conversationDetails: any = undefined; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const optionalParams: any = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    if (liveChatContext?.requestId && liveChatContext?.chatToken) {
+        optionalParams.liveChatContext = liveChatContext;
+    }
+
     try {
         TelemetryHelper.logSDKEvent(LogLevel.INFO, {
             Event: TelemetryEvent.GetConversationDetailsCallStarted,
             Description: "Conversation details call started"
         });
-        conversationDetails = await chatSDK.getConversationDetails();
+        conversationDetails = await facadeChatSDK.getConversationDetails(optionalParams);
     } catch (error) {
         checkContactIdError(error);
         TelemetryHelper.logSDKEvent(LogLevel.ERROR, {
@@ -396,7 +410,7 @@ export const getConversationDetailsCall = async (chatSDK: any) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const checkContactIdError = (e: any) => {
-    if (e?.message === ChatSDKError.AuthContactIdNotFoundFailure) {
+    if (e?.message === ChatSDKErrorName.AuthContactIdNotFoundFailure) {
         const contactIdNotFoundErrorEvent: ICustomEvent = {
             eventName: BroadcastEvent.ContactIdNotFound,
             payload: {
@@ -437,4 +451,20 @@ export const  formatTemplateString = (templateMessage : string, values : any) =>
     return templateMessage.replace(/{(\d+)}/g, (match, index) => {
         return typeof values[index] !== "undefined" ? values[index] : match;
     });
+};
+
+export const parseLowerCaseString = (property: string | boolean | undefined): string => {
+    return String(property).toLowerCase();
+};
+
+export const setOcUserAgent = (chatSDK: any): void => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (chatSDK.OCClient?.ocUserAgent && !chatSDK.OCClient?.ocUserAgent.join(" ").includes("omnichannel-chat-widget/")) {
+        try {
+            const version = require("../../../package.json").version; // eslint-disable-line @typescript-eslint/no-var-requires
+            const userAgent = `omnichannel-chat-widget/${version}`;
+            chatSDK.OCClient.ocUserAgent = [userAgent, ...chatSDK.OCClient.ocUserAgent];
+        } catch (error) {
+            console.warn(error);
+        }
+    }
 };
